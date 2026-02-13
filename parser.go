@@ -31,7 +31,7 @@ func Parse[T, U any](g Grammar[U], toks []T) (U, error) {
 
 	m := &matcher{
 		root:  scanGrammar(reflect.ValueOf(g), reflect.TypeFor[U]()),
-		state: make([][]item, 1, len(tokVals)),
+		state: make([][]item, min(1, len(tokVals)), len(tokVals)),
 		toks:  tokVals,
 	}
 

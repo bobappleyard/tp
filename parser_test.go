@@ -110,6 +110,14 @@ func TestNullableGrammar(t *testing.T) {
 	assert.Equal(t, intList{[]int{1}}, expr)
 }
 
+func TestNullableEmptyGrammar(t *testing.T) {
+	toks := []testTok{}
+
+	expr, err := Parse(nullableRuleset{}, toks)
+	assert.Nil(t, err)
+	assert.Equal(t, intList{}, expr)
+}
+
 type nullableRightRuleset struct {
 }
 
