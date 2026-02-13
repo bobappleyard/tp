@@ -42,6 +42,10 @@ func (intVal) testExpr() {}
 type ruleset struct {
 }
 
+func (ruleset) Parse(x testExpr) testExpr {
+	return x
+}
+
 func (ruleset) ParseExprInt(val intTok) intVal {
 	return intVal(val)
 }
@@ -59,7 +63,7 @@ func TestGrammar(t *testing.T) {
 		intTok{3},
 	}
 
-	expr, err := Parse(NewParser[testExpr](ruleset{}), toks)
+	expr, err := Parse(ruleset{}, toks)
 	assert.Nil(t, err)
 	assert.Equal[testExpr](t, expr, add{
 		left:  add{left: intVal{value: 1}, right: intVal{value: 2}},
@@ -77,11 +81,15 @@ func TestGrammarFail(t *testing.T) {
 		intTok{3},
 	}
 
-	_, err := Parse(NewParser[testExpr](ruleset{}), toks)
+	_, err := Parse(ruleset{}, toks)
 	assert.Equal(t, *(err.(*ErrUnexpectedToken)), ErrUnexpectedToken{Token: plusTok{}})
 }
 
 type nullableRuleset struct {
+}
+
+func (nullableRuleset) Parse(x intList) intList {
+	return x
 }
 
 func (nullableRuleset) ParseInt(left intList, val intTok) intList {
@@ -97,12 +105,16 @@ func TestNullableGrammar(t *testing.T) {
 		intTok{1},
 	}
 
-	expr, err := Parse(NewParser[intList](nullableRuleset{}), toks)
+	expr, err := Parse(nullableRuleset{}, toks)
 	assert.Nil(t, err)
 	assert.Equal(t, intList{[]int{1}}, expr)
 }
 
 type nullableRightRuleset struct {
+}
+
+func (nullableRightRuleset) Parse(x intList) intList {
+	return x
 }
 
 func (nullableRightRuleset) ParseInt(val intTok, right intList) intList {
@@ -118,12 +130,16 @@ func TestNullableRightGrammar(t *testing.T) {
 		intTok{1},
 	}
 
-	expr, err := Parse(NewParser[intList](nullableRightRuleset{}), toks)
+	expr, err := Parse(nullableRightRuleset{}, toks)
 	assert.Nil(t, err)
 	assert.Equal(t, intList{[]int{1}}, expr)
 }
 
 type sliceRuleset struct {
+}
+
+func (sliceRuleset) Parse(x intList) intList {
+	return x
 }
 
 func (sliceRuleset) ParseInts(ints []intTok) intList {
@@ -141,7 +157,7 @@ func TestSliceGrammar(t *testing.T) {
 		intTok{3},
 	}
 
-	expr, err := Parse(NewParser[intList](sliceRuleset{}), toks)
+	expr, err := Parse(sliceRuleset{}, toks)
 	assert.Nil(t, err)
 	assert.Equal(t, intList{[]int{1, 2, 3}}, expr)
 }
@@ -160,7 +176,7 @@ type delimItem[T, D any] struct {
 type delimParser[T, D any] struct {
 }
 
-func (d delim[T, D]) Parser() delimParser[T, D] {
+func (delim[T, D]) Parser() delimParser[T, D] {
 	return delimParser[T, D]{}
 }
 
@@ -181,6 +197,10 @@ func (delimParser[T, D]) ParseItem(_ D, item T) delimItem[T, D] {
 	return delimItem[T, D]{item: item}
 }
 
+func (polymorphicRuleset) Parse(x intList) intList {
+	return x
+}
+
 func (polymorphicRuleset) ParseIntList(items delim[int, plusTok]) intList {
 	return intList{vals: items.items}
 }
@@ -198,7 +218,7 @@ func TestReusableParser(t *testing.T) {
 		intTok{3},
 	}
 
-	expr, err := Parse(NewParser[intList](polymorphicRuleset{}), toks)
+	expr, err := Parse(polymorphicRuleset{}, toks)
 	assert.Nil(t, err)
 	assert.Equal(t, intList{[]int{1, 2, 3}}, expr)
 
@@ -230,6 +250,10 @@ func (optionalParser[T]) ParseOne(x T) optional[T] {
 type optionalRuleset struct {
 }
 
+func (optionalRuleset) Parse(x intList) intList {
+	return x
+}
+
 func (optionalRuleset) ParseSentence(x intTok, plus optional[plusTok]) intList {
 	if plus.value != nil {
 		return intList{vals: []int{x.value, x.value}}
@@ -242,8 +266,7 @@ func TestOptionalSuffix(t *testing.T) {
 		intTok{1},
 	}
 
-	p := NewParser[intList](optionalRuleset{})
-	expr, err := Parse(p, toks)
+	expr, err := Parse(optionalRuleset{}, toks)
 	assert.Nil(t, err)
 	assert.Equal(t, intList{[]int{1}}, expr)
 }

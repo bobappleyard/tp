@@ -6,6 +6,7 @@ import (
 	"io"
 	"reflect"
 	"slices"
+	"sync"
 )
 
 type ErrUnexpectedToken struct {
@@ -16,46 +17,34 @@ func (e *ErrUnexpectedToken) Error() string {
 	return fmt.Sprintf("unexpected token: %#v", e.Token)
 }
 
-type Parser[U any] struct {
-	root    *symbol
-	ruleSet any
+type Grammar[T any] interface {
+	Parse(T) T
 }
 
-func NewParser[U any](ruleSet any) Parser[U] {
-	s := &scanner{
-		host:     reflect.ValueOf(ruleSet),
-		rootType: reflect.TypeOf(new(U)).Elem(),
-		types:    map[reflect.Type]*symbol{},
-	}
-
-	root := s.scan()
-	return Parser[U]{
-		root:    root,
-		ruleSet: ruleSet,
-	}
-}
-
-func Parse[T, U any](p Parser[U], toks []T) (U, error) {
+func Parse[T, U any](g Grammar[U], toks []T) (U, error) {
 	var zero U
+
 	tokVals := make([]reflect.Value, len(toks))
 	for i, t := range toks {
 		tokVals[i] = reflect.ValueOf(t)
 	}
 
 	m := &matcher{
-		state: [][]item{nil},
+		root:  scanGrammar(reflect.ValueOf(g), reflect.TypeFor[U]()),
+		state: make([][]item, 1, len(tokVals)),
 		toks:  tokVals,
 	}
-	if err := m.run(p.root); err != nil {
+
+	if err := m.run(); err != nil {
 		return zero, err
 	}
 
-	rv, err := m.builder().build(p.root)
+	rv, err := m.builder().build()
 	if err != nil {
 		return zero, err
 	}
 
-	return rv.Interface().(U), nil
+	return g.Parse(rv.Interface().(U)), nil
 }
 
 type symbol struct {
@@ -95,6 +84,28 @@ type scanner struct {
 	types    map[reflect.Type]*symbol
 }
 
+var cache = map[reflect.Type]*symbol{}
+var lock sync.Mutex
+
+func scanGrammar(ruleSet reflect.Value, rootType reflect.Type) *symbol {
+	lock.Lock()
+	defer lock.Unlock()
+
+	if p, ok := cache[ruleSet.Type()]; ok {
+		return p
+	}
+
+	s := &scanner{
+		host:     ruleSet,
+		rootType: rootType,
+		types:    map[reflect.Type]*symbol{},
+	}
+
+	root := s.scan()
+	cache[ruleSet.Type()] = root
+	return root
+}
+
 func (s *scanner) scan() *symbol {
 	s.ensure(s.rootType)
 	s.scanMethods(s.host)
@@ -109,6 +120,9 @@ func (s *scanner) scanMethods(host reflect.Value) {
 	hostType := host.Type()
 	for i := hostType.NumMethod() - 1; i >= 0; i-- {
 		m := hostType.Method(i)
+		if m.Name == "Parse" {
+			continue
+		}
 		if !m.IsExported() {
 			continue
 		}
@@ -158,8 +172,7 @@ func (s *scanner) markNullableTypes() {
 		}
 	}
 
-	for needsWork.Ready() {
-		next := needsWork.Dequeue()
+	for next := range needsWork.All() {
 	nextRule:
 		for _, r := range symUsers[next] {
 			if r.Implements.Nullable {
@@ -276,6 +289,7 @@ func (s *scanner) sliceTypeSymbol(sliceSym *symbol, slice reflect.Type) {
 }
 
 type matcher struct {
+	root  *symbol
 	state [][]item
 	toks  []reflect.Value
 	cur   int
@@ -292,9 +306,9 @@ type item struct {
 	progress int
 }
 
-func (p *matcher) run(root *symbol) error {
+func (p *matcher) run() error {
 	p.state = [][]item{nil}
-	p.predict(root)
+	p.predict(p.root)
 	for _, t := range p.toks {
 		p.state = append(p.state, nil)
 
@@ -302,7 +316,7 @@ func (p *matcher) run(root *symbol) error {
 		p.cur++
 	}
 	p.finalStep()
-	return p.matches(root)
+	return p.matches(p.root)
 }
 
 func (p *matcher) step(tok reflect.Value) {
@@ -436,6 +450,7 @@ var (
 )
 
 type builder struct {
+	root  *symbol
 	state [][]item
 	seen  []reflect.Value
 }
@@ -458,6 +473,7 @@ func (p *matcher) builder() *builder {
 		})
 	}
 	return &builder{
+		root:  p.root,
 		state: flipped,
 		seen:  p.toks,
 	}
@@ -480,9 +496,9 @@ func (p *matcher) flipState() [][]item {
 	return flipped
 }
 
-func (b *builder) build(root *symbol) (reflect.Value, error) {
+func (b *builder) build() (reflect.Value, error) {
 	for _, top := range b.state[0] {
-		if top.rule.Implements != root {
+		if top.rule.Implements != b.root {
 			continue
 		}
 		if top.position != len(b.seen) {

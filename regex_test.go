@@ -116,6 +116,17 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
+			name: "DashSeq",
+			in:   `a-c`,
+			out: seq{
+				left: match{start: 'a', end: 'a'},
+				right: seq{
+					left:  match{start: '-', end: '-'},
+					right: match{start: 'c', end: 'c'},
+				},
+			},
+		},
+		{
 			name: "Choice",
 			in:   `a|b`,
 			out: choice{

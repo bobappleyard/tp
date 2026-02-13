@@ -57,7 +57,7 @@ func (e nest) compile(prog programOps, start, end LexerState) {
 	e.nested.compile(prog, start, end)
 }
 
-var regexParser = NewParser[expr](&regexRules{map[rune]charset{
+var regexParser = &regexRules{map[rune]charset{
 	'n': {ranges: []match{
 		{start: '\n', end: '\n'},
 	}},
@@ -86,7 +86,7 @@ var regexParser = NewParser[expr](&regexRules{map[rune]charset{
 	'd': {ranges: []match{
 		{start: '0', end: '9'},
 	}},
-}})
+}}
 
 type token interface {
 	token()
@@ -233,6 +233,10 @@ func (match) expr() {}
 
 type regexRules struct {
 	escMap map[rune]charset
+}
+
+func (r *regexRules) Parse(e expr) expr {
+	return e
 }
 
 func (r *regexRules) ParseDot(e dot) term {

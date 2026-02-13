@@ -1,9 +1,21 @@
 package tp
 
+import "iter"
+
 type queue[T any] struct {
 	items []T
 	put   int
 	take  int
+}
+
+func (q *queue[T]) All() iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for q.Ready() {
+			if !yield(q.Dequeue()) {
+				break
+			}
+		}
+	}
 }
 
 func (q *queue[T]) Enqueue(x T) {
