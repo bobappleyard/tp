@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 )
 
+// Use a regular expression to specify a token.
 func Regex[T any](re string, yield TokenConstructor[T]) TokenSpec[T] {
 	return func(l *Lexer[T]) error {
 		end := l.State()
@@ -235,8 +236,8 @@ type regexRules struct {
 	escMap map[rune]charset
 }
 
-func (r *regexRules) Parse(e expr) expr {
-	return e
+func (r *regexRules) Parse(e expr) (expr, error) {
+	return e, nil
 }
 
 func (r *regexRules) ParseDot(e dot) term {

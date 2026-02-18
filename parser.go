@@ -9,6 +9,11 @@ import (
 	"sync"
 )
 
+var (
+	ErrFailedMatch    = errors.New("failed to match")
+	ErrAmbiguousParse = errors.New("ambiguous parse")
+)
+
 type ErrUnexpectedToken struct {
 	Token any
 }
@@ -17,12 +22,51 @@ func (e *ErrUnexpectedToken) Error() string {
 	return fmt.Sprintf("unexpected token: %#v", e.Token)
 }
 
-type Grammar[T any] interface {
-	Parse(T) T
+// A specification of a context-free grammar. These are grammars that are sufficiently expressive to
+// describe most data formats and programming languages. While this specifies a method, Parse, all
+// of the public methods on the type are used by this library in order to describe the structure of
+// the grammar.
+//
+// Each public method describes a rule. During parsing, these rules are consulted in order to
+// determine what to do. The structure of a rule is:
+//
+//	S -> α
+//
+// Where S is a nonterminal symbol and α is a string of terminal and nonterminal symbols. A terminal
+// symbol is defined outside the grammar, and is assumed to appear in the input. A nonterminal
+// symbol is defined within the grammar by the rules within which it appears on the left hand side.
+// The idea is that whenever you see the nonterminal, you can replace it with whatever appears on
+// the right hand side, and if that is what you see in the input, then the rule matches.
+//
+// For more information, see https://en.wikipedia.org/wiki/Context-free_grammar
+//
+// Here we encode the rules into methods, where the nonterminal symbol is given as the return type
+// and and the replacement string is given by the arguments. The method body affords the opportunity
+// to apply some processing to the syntax during matching.
+//
+// Any types that appear in a rule's arguments that do not appear in any rule's return type cannot
+// be created as a result of parsing. They are assumed to already exist in the input to be parsed,
+// i.e. terminal symbols.
+//
+// An interface can be used in a grammar. This indicates that any of the types that implement the
+// interface can appear in that location in the parse.
+//
+// If an argument is declared as a slice of a type, then it will be matched as zero or more of that
+// type.
+//
+// If an argument is of a type with a method named Parser, this is used to furnish more rules. The
+// method is called once per type, and whatever it returns is treated as if it is part of the
+// grammar, which is to say that its public methods are also treated as rules.
+type Grammar[T, U any] interface {
+	// Called on the parse tree, yielding the result of the parse. The argument type, T, indicates
+	// where matching should begin.
+	Parse(T) (U, error)
 }
 
-func Parse[T, U any](g Grammar[U], toks []T) (U, error) {
-	var zero U
+// Parse an input, given as a slice of tokens, using the set of rules described by the provided
+// grammar. If it fails to parse, it will return an error indicating the problem.
+func Parse[T, U, V any](g Grammar[U, V], toks []T) (V, error) {
+	var zero V
 
 	tokVals := make([]reflect.Value, len(toks))
 	for i, t := range toks {
@@ -44,7 +88,7 @@ func Parse[T, U any](g Grammar[U], toks []T) (U, error) {
 		return zero, err
 	}
 
-	return g.Parse(rv.Interface().(U)), nil
+	return g.Parse(rv.Interface().(U))
 }
 
 type symbol struct {
@@ -252,7 +296,7 @@ func (s *scanner) ensure(key reflect.Type) *symbol {
 	s.types[key] = v
 	if key.Kind() == reflect.Slice {
 		s.sliceTypeSymbol(v, key)
-	} else if m, ok := key.MethodByName("Parser"); ok {
+	} else if m, ok := key.MethodByName("Grammar"); ok {
 		host := m.Func.Call([]reflect.Value{
 			reflect.New(key).Elem(),
 		})[0]
@@ -443,11 +487,6 @@ func (x item) makeProgress() item {
 		progress: x.progress + 1,
 	}
 }
-
-var (
-	ErrFailedMatch    = errors.New("failed to match")
-	ErrAmbiguousParse = errors.New("ambiguous parse")
-)
 
 type builder struct {
 	root  *symbol
