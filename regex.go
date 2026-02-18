@@ -7,6 +7,22 @@ import (
 )
 
 // Use a regular expression to specify a token.
+//
+// The syntax is a simplified version of regular expressions:
+//
+//	a     // literal match
+//	ab    // sequence
+//	.     // any character
+//	[a-z] // character set
+//	\.    // escape special characters
+//	e?    // zero or one
+//	e+    // one or more
+//	e*    // zero, one or more
+//	(s)   // grouping
+//
+// So, e.g. a simple regex for a floating point number would be
+//
+//	[0-9]+\.[0-9]+
 func Regex[T any](re string, yield TokenConstructor[T]) TokenSpec[T] {
 	return func(l *Lexer[T]) error {
 		end := l.State()
