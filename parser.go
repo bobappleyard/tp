@@ -54,7 +54,7 @@ func (e *ErrUnexpectedToken) Error() string {
 // If an argument is declared as a slice of a type, then it will be matched as zero or more of that
 // type.
 //
-// If an argument is of a type with a method named Parser, this is used to furnish more rules. The
+// If an argument is of a type with a method named Grammar, this is used to furnish more rules. The
 // method is called once per type, and whatever it returns is treated as if it is part of the
 // grammar, which is to say that its public methods are also treated as rules.
 type Grammar[T, U any] interface {
