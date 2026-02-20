@@ -56,7 +56,8 @@ func (e *ErrUnexpectedToken) Error() string {
 //
 // If an argument is of a type with a method named Grammar, this is used to furnish more rules. The
 // method is called once per type, and whatever it returns is treated as if it is part of the
-// grammar, which is to say that its public methods are also treated as rules.
+// grammar, which is to say that its public methods are also treated as rules. When combined with
+// Go's parametric types, this offers a flexible and powerful way to reuse syntax rules.
 type Grammar[T, U any] interface {
 	// Called on the parse tree, yielding the result of the parse. The argument type, T, indicates
 	// where matching should begin.
@@ -103,13 +104,13 @@ type symbol struct {
 }
 
 type rule struct {
-	// symbol this Implements
+	// symbol this rule is associated with
 	Implements *symbol
 
 	// array of symbols to match
 	Deps []*symbol
 
-	// the parser Host
+	// reusable grammars imply multiple hosts
 	Host reflect.Value
 
 	// debug: the rule's method Name
@@ -119,7 +120,7 @@ type rule struct {
 	Index int
 
 	// function to call when building the parse tree
-	Method func(host reflect.Value, args []reflect.Value) []reflect.Value
+	Method func(args []reflect.Value) []reflect.Value
 }
 
 type scanner struct {
@@ -184,7 +185,7 @@ func (s *scanner) scanMethods(host reflect.Value) {
 			Host:       host,
 			Name:       m.Name,
 			Index:      m.Index,
-			Method: func(host reflect.Value, args []reflect.Value) []reflect.Value {
+			Method: func(args []reflect.Value) []reflect.Value {
 				return m.Func.Call(args)
 			},
 		})
@@ -314,7 +315,7 @@ func (s *scanner) sliceTypeSymbol(sliceSym *symbol, slice reflect.Type) {
 		Host:       s.host,
 		Name:       fmt.Sprintf("[]%s(nil)", elem),
 		Index:      -1,
-		Method: func(host reflect.Value, args []reflect.Value) []reflect.Value {
+		Method: func(args []reflect.Value) []reflect.Value {
 			res := reflect.MakeSlice(slice, 0, 0)
 			return []reflect.Value{res}
 		},
@@ -325,7 +326,7 @@ func (s *scanner) sliceTypeSymbol(sliceSym *symbol, slice reflect.Type) {
 		Host:       s.host,
 		Name:       fmt.Sprintf("[]%s(append)", elem),
 		Index:      -1,
-		Method: func(host reflect.Value, args []reflect.Value) []reflect.Value {
+		Method: func(args []reflect.Value) []reflect.Value {
 			res := reflect.Append(args[1], args[2])
 			return []reflect.Value{res}
 		},
@@ -579,7 +580,7 @@ func (b *builder) buildFromSpan(s span) (reflect.Value, error) {
 		args[i+1] = child
 	}
 
-	rets := r.Method(r.Host, args)
+	rets := r.Method(args)
 	if len(rets) == 2 && !rets[1].IsNil() {
 		return reflect.Value{}, rets[1].Interface().(error)
 	}
